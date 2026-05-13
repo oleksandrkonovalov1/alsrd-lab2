@@ -5,10 +5,12 @@
  * Topic: Algorithms for working with data structures
  *
  * Formatting: ДСТУ 3008:2015 compact lab style
+ * - Key fragments only in body (section 3), full code in ДОДАТОК А
+ * - Real program output via execSync
  * - Grey background + blue left accent for code blocks
  * - keepNext on all headings and captions
- * - pageBreakBefore on sections 4, 5, appendices
- * - Short code blocks keepTogether, long blocks with continuation captions
+ * - pageBreakBefore on sections 4, 5, ДОДАТОК А
+ * - Short code blocks (<=25 lines) keepTogether, long blocks flow naturally
  *
  * Usage: npm run report
  */
@@ -19,6 +21,7 @@ import {
   PageBreak, BorderStyle, ShadingType,
 } from "docx";
 import { readFileSync, writeFileSync, readdirSync } from "fs";
+import { execSync } from "child_process";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
@@ -40,7 +43,6 @@ const FIRST_LINE_INDENT = Math.round(12.5 * MM_TO_DXA);
 const CODE_LEFT_INDENT = 283;
 const CODE_BORDER_COLOR = "4472C4";
 const CODE_BG_COLOR = "F2F2F2";
-const MAX_KEEP_TOGETHER_LINES = 20;
 
 const margins = {
   top: Math.round(20 * MM_TO_DXA),
@@ -177,12 +179,48 @@ function readSourceFiles() {
   return files;
 }
 
-// ─── Read structure source files ────────────────────────────────────
+// ─── Real program output ────────────────────────────────────────────
 
-const srcDir = join(__dirname, "..", "..", "src", "structures");
-const stackCode = readFileSync(join(srcDir, "stack.ts"), "utf-8").trimEnd();
-const queueCode = readFileSync(join(srcDir, "queue.ts"), "utf-8").trimEnd();
-const linkedListCode = readFileSync(join(srcDir, "linked-list.ts"), "utf-8").trimEnd();
+const repoRoot = join(__dirname, "..", "..");
+const programOutput = execSync("npx tsx src/main.ts", { cwd: repoRoot, encoding: "utf-8" }).trim();
+
+// ─── Key fragments for body ─────────────────────────────────────────
+
+const stackFragment = `  push(value: number): void {
+    if (this.top >= this.capacity - 1) throw new Error("Stack overflow");
+    this.data[++this.top] = value;
+  }
+
+  pop(): number {
+    if (this.top < 0) throw new Error("Stack underflow");
+    return this.data[this.top--];
+  }`;
+
+const queueFragment = `  enqueue(value: number): void {
+    if (this.size >= this.capacity) throw new Error("Queue overflow");
+    this.data[this.tail] = value;
+    this.tail = (this.tail + 1) % this.capacity;
+    this.size++;
+  }
+
+  dequeue(): number {
+    if (this.size === 0) throw new Error("Queue is empty");
+    const value = this.data[this.head];
+    this.head = (this.head + 1) % this.capacity;
+    this.size--;
+    return value;
+  }`;
+
+const listFragment = `  append(value: number): void {
+    const node = new ListNode(value);
+    if (!this.head) {
+      this.head = node;
+      return;
+    }
+    let current = this.head;
+    while (current.next) current = current.next;
+    current.next = node;
+  }`;
 
 // ─── TITLE PAGE ─────────────────────────────────────────────────────
 
@@ -221,55 +259,6 @@ const titlePageParagraphs = [
 
 // ─── BODY ───────────────────────────────────────────────────────────
 
-const programOutput = `Лабораторна робота №2 — Структури даних
-Варіант 9
-
-=== Завдання 1: Стек на основі масиву ===
-
-PUSH 5 елементів:
-  push(10)
-  push(20)
-  push(30)
-  push(40)
-  push(50)
-Stack [bottom → top]: 10, 20, 30, 40, 50
-
-POP 2 елементи:
-  pop() → 50
-  pop() → 40
-
-Залишок стеку:
-Stack [bottom → top]: 10, 20, 30
-
-=== Завдання 2: Черга на основі масиву ===
-
-ENQUEUE 5 елементів:
-  enqueue(10)
-  enqueue(20)
-  enqueue(30)
-  enqueue(40)
-  enqueue(50)
-Queue [head → tail]: 10, 20, 30, 40, 50
-
-DEQUEUE 2 елементи:
-  dequeue() → 10
-  dequeue() → 20
-
-Залишок черги:
-Queue [head → tail]: 30, 40, 50
-
-=== Завдання 3: Зв'язковий список ===
-
-Створення списку з 5 елементів:
-  append(10)
-  append(20)
-  append(30)
-  append(40)
-  append(50)
-
-Список:
-List: 10 → 20 → 30 → 40 → 50 → null`;
-
 const bodyParagraphs = [
   // Body starts on new page (after title)
   new Paragraph({ children: [new PageBreak()] }),
@@ -288,18 +277,18 @@ const bodyParagraphs = [
 
   subsectionHeading("3.1", "Стек на основі масиву"),
   bodyParagraph("Стек — це структура даних, що працює за принципом LIFO (Last In, First Out). Реалізація виконана на основі масиву фіксованої ємності та індексу top, що вказує на верхній елемент. Операція push збільшує top на одиницю та записує значення, операція pop зчитує значення та зменшує top. При спробі додати елемент до переповненого стеку генерується виняток overflow, при вилученні з порожнього — underflow."),
-  listingCaption("3.1", "Реалізація стеку"),
-  ...codeBlock(stackCode),
+  listingCaption("3.1", "Ключові операції push та pop"),
+  ...codeBlock(stackFragment),
 
   subsectionHeading("3.2", "Черга на основі масиву"),
   bodyParagraph("Черга — це структура даних, що працює за принципом FIFO (First In, First Out). Реалізація виконана як циклічний буфер з використанням індексів head, tail та лічильника size. Операція enqueue додає елемент у позицію tail, операція dequeue вилучає елемент із позиції head. Обидва індекси обертаються за модулем ємності масиву, що забезпечує ефективне використання пам'яті."),
-  listingCaption("3.2", "Реалізація черги"),
-  ...codeBlock(queueCode),
+  listingCaption("3.2", "Ключові операції enqueue та dequeue"),
+  ...codeBlock(queueFragment),
 
   subsectionHeading("3.3", "Зв'язковий список"),
-  bodyParagraph("Однозв'язковий список — це динамічна структура даних, де кожен вузол зберігає значення та посилання на наступний вузол. Операція append проходить список до останнього вузла та додає новий елемент. Операція print обходить список від head до null, збираючи значення для виведення."),
-  listingCaption("3.3", "Реалізація зв'язкового списку"),
-  ...codeBlock(linkedListCode),
+  bodyParagraph("Однозв'язковий список — це динамічна структура даних, де кожен вузол зберігає значення та посилання на наступний вузол. Операція append проходить список до останнього вузна та додає новий елемент. Операція print обходить список від head до null, збираючи значення для виведення."),
+  listingCaption("3.3", "Ключова операція append"),
+  ...codeBlock(listFragment),
 
   // Section 4 — new page
   sectionHeading("4", "Результати", { pageBreakBefore: true }),
@@ -309,7 +298,7 @@ const bodyParagraphs = [
 
   // Section 5 — new page
   sectionHeading("5", "Висновки", { pageBreakBefore: true }),
-  bodyParagraph("У ході лабораторної роботи було реалізовано три базові структури даних — стек, чергу та зв'язковий список — без використання стандартних бібліотечних класів. Стек реалізовано на основі масиву з принципом LIFO, чергу — як циклічний буфер з принципом FIFO, список — як однозв'язкову динамічну структуру. Результати демонструють коректну роботу всіх операцій."),
+  bodyParagraph("У ході лабораторної роботи було реалізовано три базові структури даних без використання стандартних бібліотечних класів. Стек реалізовано на основі масиву з принципом LIFO, чергу — як циклічний буфер з принципом FIFO, однозв'язковий список — як динамічну структуру з покажчиками. Усі операції працюють коректно, що підтверджено результатами виконання програми."),
 ];
 
 // ─── ДОДАТОК А ──────────────────────────────────────────────────────
