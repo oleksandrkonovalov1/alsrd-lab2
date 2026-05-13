@@ -143,41 +143,13 @@ function listingCaption(number, title) {
   });
 }
 
-function listingContinuation(number) {
-  return new Paragraph({
-    spacing: { before: 60, after: 60, line: LINE_SPACING_15, lineRule: "auto" },
-    indent: { firstLine: FIRST_LINE_INDENT },
-    keepNext: true,
-    children: [bodyRun(`Продовження лістингу ${number}`)],
-  });
-}
-
-function codeBlock(text, { listingNumber = null } = {}) {
+function codeBlock(text) {
   const lines = text.split("\n");
-  const keepTogether = lines.length <= MAX_KEEP_TOGETHER_LINES;
-
-  if (keepTogether) {
-    return lines.map((line, i) =>
-      codeParagraph(line, { keepLines: true, keepNext: i < lines.length - 1 })
-    );
-  }
-
-  // Long block: split into chunks of MAX_KEEP_TOGETHER_LINES
-  const paragraphs = [];
-  const chunkSize = MAX_KEEP_TOGETHER_LINES;
-  for (let i = 0; i < lines.length; i += chunkSize) {
-    if (i > 0 && listingNumber) {
-      paragraphs.push(listingContinuation(listingNumber));
-    }
-    const chunk = lines.slice(i, i + chunkSize);
-    for (let j = 0; j < chunk.length; j++) {
-      paragraphs.push(codeParagraph(chunk[j], {
-        keepLines: true,
-        keepNext: j < chunk.length - 1,
-      }));
-    }
-  }
-  return paragraphs;
+  const keepTogether = lines.length <= 25;
+  return lines.map((line, i) => codeParagraph(line, {
+    keepLines: keepTogether,
+    keepNext: keepTogether && i < lines.length - 1,
+  }));
 }
 
 // ─── Source code reader ─────────────────────────────────────────────
@@ -317,23 +289,23 @@ const bodyParagraphs = [
   subsectionHeading("3.1", "Стек на основі масиву"),
   bodyParagraph("Стек — це структура даних, що працює за принципом LIFO (Last In, First Out). Реалізація виконана на основі масиву фіксованої ємності та індексу top, що вказує на верхній елемент. Операція push збільшує top на одиницю та записує значення, операція pop зчитує значення та зменшує top. При спробі додати елемент до переповненого стеку генерується виняток overflow, при вилученні з порожнього — underflow."),
   listingCaption("3.1", "Реалізація стеку"),
-  ...codeBlock(stackCode, { listingNumber: "3.1" }),
+  ...codeBlock(stackCode),
 
   subsectionHeading("3.2", "Черга на основі масиву"),
   bodyParagraph("Черга — це структура даних, що працює за принципом FIFO (First In, First Out). Реалізація виконана як циклічний буфер з використанням індексів head, tail та лічильника size. Операція enqueue додає елемент у позицію tail, операція dequeue вилучає елемент із позиції head. Обидва індекси обертаються за модулем ємності масиву, що забезпечує ефективне використання пам'яті."),
   listingCaption("3.2", "Реалізація черги"),
-  ...codeBlock(queueCode, { listingNumber: "3.2" }),
+  ...codeBlock(queueCode),
 
   subsectionHeading("3.3", "Зв'язковий список"),
   bodyParagraph("Однозв'язковий список — це динамічна структура даних, де кожен вузол зберігає значення та посилання на наступний вузол. Операція append проходить список до останнього вузла та додає новий елемент. Операція print обходить список від head до null, збираючи значення для виведення."),
   listingCaption("3.3", "Реалізація зв'язкового списку"),
-  ...codeBlock(linkedListCode, { listingNumber: "3.3" }),
+  ...codeBlock(linkedListCode),
 
   // Section 4 — new page
   sectionHeading("4", "Результати", { pageBreakBefore: true }),
   bodyParagraph("Результати виконання програми наведено нижче."),
   listingCaption("4.1", "Вивід програми"),
-  ...codeBlock(programOutput, { listingNumber: "4.1" }),
+  ...codeBlock(programOutput),
 
   // Section 5 — new page
   sectionHeading("5", "Висновки", { pageBreakBefore: true }),
@@ -353,7 +325,7 @@ let listingCounter = 1;
 for (const file of sourceFiles) {
   const num = `А.${listingCounter}`;
   appendixParagraphs.push(listingCaption(num, file.name));
-  appendixParagraphs.push(...codeBlock(file.content.trimEnd(), { listingNumber: num }));
+  appendixParagraphs.push(...codeBlock(file.content.trimEnd()));
   appendixParagraphs.push(emptyLine());
   listingCounter++;
 }
