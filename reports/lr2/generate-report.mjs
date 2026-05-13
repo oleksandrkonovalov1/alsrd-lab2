@@ -124,12 +124,12 @@ function codeParagraph(text, { keepLines = false, keepNext = false } = {}) {
   return new Paragraph({
     spacing: { after: 0, line: 240, lineRule: "auto" },
     indent: { left: CODE_LEFT_INDENT },
-    shading: { fill: CODE_BG_COLOR, type: ShadingType.CLEAR },
+    shading: { fill: CODE_BG_COLOR, color: "auto", type: ShadingType.CLEAR },
     border: { left: { style: BorderStyle.SINGLE, size: 12, color: CODE_BORDER_COLOR, space: 4 } },
     keepLines,
     keepNext,
     children: [
-      new TextRun({ text, font: FONT_CODE, size: CODE_SIZE }),
+      new TextRun({ text: text || " ", font: FONT_CODE, size: CODE_SIZE, shading: { fill: CODE_BG_COLOR, color: "auto", type: ShadingType.CLEAR } }),
     ],
   });
 }
