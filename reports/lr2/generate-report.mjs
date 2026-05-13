@@ -4,13 +4,19 @@
  * DOCX report generator for Lab 2 — Algorithms & Data Structures
  * Topic: Algorithms for working with data structures
  *
+ * Formatting: ДСТУ 3008:2015 compact lab style
+ * - Grey background + blue left accent for code blocks
+ * - keepNext on all headings and captions
+ * - pageBreakBefore on sections 4, 5, appendices
+ * - Short code blocks keepTogether, long blocks with continuation captions
+ *
  * Usage: npm run report
  */
 
 import {
   Document, Packer, Paragraph, TextRun, Header,
   AlignmentType, PageNumber, HeadingLevel,
-  PageBreak,
+  PageBreak, BorderStyle, ShadingType,
 } from "docx";
 import { readFileSync, writeFileSync, readdirSync } from "fs";
 import { dirname, join } from "path";
@@ -19,7 +25,7 @@ import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// ─── Constants ───────────────────────────────────────────────────────
+// ─── Constants (ДСТУ 3008:2015) ─────────────────────────────────────
 
 const MM_TO_DXA = 56.693;
 const PT_TO_HALF_PT = 2;
@@ -30,6 +36,11 @@ const BODY_SIZE = 14 * PT_TO_HALF_PT;
 const CODE_SIZE = 10 * PT_TO_HALF_PT;
 const TITLE_SIZE = 14 * PT_TO_HALF_PT;
 const LINE_SPACING_15 = 360;
+const FIRST_LINE_INDENT = Math.round(12.5 * MM_TO_DXA);
+const CODE_LEFT_INDENT = 283;
+const CODE_BORDER_COLOR = "4472C4";
+const CODE_BG_COLOR = "F2F2F2";
+const MAX_KEEP_TOGETHER_LINES = 20;
 
 const margins = {
   top: Math.round(20 * MM_TO_DXA),
@@ -38,7 +49,7 @@ const margins = {
   right: Math.round(15 * MM_TO_DXA),
 };
 
-// ─── Helpers (from lab-report.mjs template) ──────────────────────────
+// ─── Helpers ────────────────────────────────────────────────────────
 
 function titleRun(text, opts = {}) {
   return new TextRun({
@@ -51,12 +62,7 @@ function titleRun(text, opts = {}) {
 }
 
 function bodyRun(text, opts = {}) {
-  return new TextRun({
-    text,
-    font: FONT,
-    size: BODY_SIZE,
-    ...opts,
-  });
+  return new TextRun({ text, font: FONT, size: BODY_SIZE, ...opts });
 }
 
 function centeredParagraph(runs, spacing = {}) {
@@ -71,11 +77,12 @@ function emptyLine() {
   return centeredParagraph(titleRun(""));
 }
 
-function sectionHeading(number, title, opts = {}) {
+function sectionHeading(number, title, { pageBreakBefore: pbBefore = false } = {}) {
   return new Paragraph({
     heading: HeadingLevel.HEADING_1,
-    pageBreakBefore: opts.pageBreakBefore ?? false,
     spacing: { before: 240, after: 120, line: LINE_SPACING_15, lineRule: "auto" },
+    keepNext: true,
+    pageBreakBefore: pbBefore,
     children: [
       new TextRun({
         text: [number, title].filter(Boolean).join(" ").toUpperCase(),
@@ -91,7 +98,8 @@ function subsectionHeading(number, title) {
   return new Paragraph({
     heading: HeadingLevel.HEADING_2,
     spacing: { before: 120, after: 60, line: LINE_SPACING_15, lineRule: "auto" },
-    indent: { firstLine: Math.round(12.5 * MM_TO_DXA) },
+    indent: { firstLine: FIRST_LINE_INDENT },
+    keepNext: true,
     children: [
       new TextRun({
         text: `${number} ${title}`,
@@ -103,29 +111,25 @@ function subsectionHeading(number, title) {
   });
 }
 
-function bodyParagraph(text, opts = {}) {
+function bodyParagraph(text) {
   return new Paragraph({
-    spacing: {
-      before: opts.before ?? 0,
-      after: opts.after ?? 0,
-      line: LINE_SPACING_15,
-      lineRule: "auto",
-    },
-    indent: { firstLine: Math.round(12.5 * MM_TO_DXA) },
+    spacing: { after: 0, line: LINE_SPACING_15, lineRule: "auto" },
+    indent: { firstLine: FIRST_LINE_INDENT },
     alignment: AlignmentType.JUSTIFIED,
     children: [bodyRun(text)],
   });
 }
 
-function codeParagraph(text) {
+function codeParagraph(text, { keepLines = false, keepNext = false } = {}) {
   return new Paragraph({
     spacing: { after: 0, line: 240, lineRule: "auto" },
+    indent: { left: CODE_LEFT_INDENT },
+    shading: { fill: CODE_BG_COLOR, type: ShadingType.CLEAR },
+    border: { left: { style: BorderStyle.SINGLE, size: 12, color: CODE_BORDER_COLOR, space: 4 } },
+    keepLines,
+    keepNext,
     children: [
-      new TextRun({
-        text,
-        font: FONT_CODE,
-        size: CODE_SIZE,
-      }),
+      new TextRun({ text, font: FONT_CODE, size: CODE_SIZE }),
     ],
   });
 }
@@ -133,71 +137,94 @@ function codeParagraph(text) {
 function listingCaption(number, title) {
   return new Paragraph({
     spacing: { before: 120, after: 60, line: LINE_SPACING_15, lineRule: "auto" },
-    indent: { firstLine: Math.round(12.5 * MM_TO_DXA) },
-    children: [
-      bodyRun(`Лістинг ${number} — ${title}`),
-    ],
+    indent: { firstLine: FIRST_LINE_INDENT },
+    keepNext: true,
+    children: [bodyRun(`Лістинг ${number} — ${title}`)],
   });
 }
 
-// ─── Code block helper ───────────────────────────────────────────────
-
-function codeBlock(text) {
-  return text.split("\n").map((line) => codeParagraph(line));
+function listingContinuation(number) {
+  return new Paragraph({
+    spacing: { before: 60, after: 60, line: LINE_SPACING_15, lineRule: "auto" },
+    indent: { firstLine: FIRST_LINE_INDENT },
+    keepNext: true,
+    children: [bodyRun(`Продовження лістингу ${number}`)],
+  });
 }
 
-// ─── Source code reader ──────────────────────────────────────────────
+function codeBlock(text, { listingNumber = null } = {}) {
+  const lines = text.split("\n");
+  const keepTogether = lines.length <= MAX_KEEP_TOGETHER_LINES;
+
+  if (keepTogether) {
+    return lines.map((line, i) =>
+      codeParagraph(line, { keepLines: true, keepNext: i < lines.length - 1 })
+    );
+  }
+
+  // Long block: split into chunks of MAX_KEEP_TOGETHER_LINES
+  const paragraphs = [];
+  const chunkSize = MAX_KEEP_TOGETHER_LINES;
+  for (let i = 0; i < lines.length; i += chunkSize) {
+    if (i > 0 && listingNumber) {
+      paragraphs.push(listingContinuation(listingNumber));
+    }
+    const chunk = lines.slice(i, i + chunkSize);
+    for (let j = 0; j < chunk.length; j++) {
+      paragraphs.push(codeParagraph(chunk[j], {
+        keepLines: true,
+        keepNext: j < chunk.length - 1,
+      }));
+    }
+  }
+  return paragraphs;
+}
+
+// ─── Source code reader ─────────────────────────────────────────────
 
 function readSourceFiles() {
   const srcDir = join(__dirname, "..", "..", "src");
   const files = [];
-
   function walk(dir, prefix = "") {
     const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) =>
-      a.name.localeCompare(b.name),
+      a.name.localeCompare(b.name)
     );
     for (const entry of entries) {
       const fullPath = join(dir, entry.name);
       if (entry.isDirectory()) {
         walk(fullPath, prefix ? `${prefix}/${entry.name}` : entry.name);
       } else if (entry.name.endsWith(".ts")) {
-        const relativeName = prefix ? `${prefix}/${entry.name}` : entry.name;
         files.push({
-          name: relativeName,
+          name: prefix ? `${prefix}/${entry.name}` : entry.name,
           content: readFileSync(fullPath, "utf-8"),
         });
       }
     }
   }
-
   walk(srcDir);
   return files;
 }
 
-// ─── Read structure source files ─────────────────────────────────────
+// ─── Read structure source files ────────────────────────────────────
 
 const srcDir = join(__dirname, "..", "..", "src", "structures");
 const stackCode = readFileSync(join(srcDir, "stack.ts"), "utf-8").trimEnd();
 const queueCode = readFileSync(join(srcDir, "queue.ts"), "utf-8").trimEnd();
 const linkedListCode = readFileSync(join(srcDir, "linked-list.ts"), "utf-8").trimEnd();
 
-// ─── TITLE PAGE ──────────────────────────────────────────────────────
+// ─── TITLE PAGE ─────────────────────────────────────────────────────
 
 const titlePageParagraphs = [
   centeredParagraph(titleRun("Міністерство освіти і науки України")),
   centeredParagraph(titleRun("Харківський національний університет радіоелектроніки")),
   emptyLine(),
   centeredParagraph(titleRun("Кафедра програмної інженерії")),
-  emptyLine(),
-  emptyLine(),
-  emptyLine(),
-  emptyLine(),
+  emptyLine(), emptyLine(), emptyLine(), emptyLine(),
   centeredParagraph(titleRun("ЗВІТ", { bold: true })),
   centeredParagraph(titleRun("з лабораторної роботи № 2")),
   centeredParagraph(titleRun("з дисципліни «Алгоритми та структури даних»")),
   centeredParagraph(titleRun("на тему: «Алгоритми роботи зі структурами даних»")),
-  emptyLine(),
-  emptyLine(),
+  emptyLine(), emptyLine(),
   centeredParagraph(titleRun("Варіант 9")),
   emptyLine(),
   new Paragraph({
@@ -216,16 +243,11 @@ const titlePageParagraphs = [
     spacing: { after: 0, line: LINE_SPACING_15, lineRule: "auto" },
     children: [titleRun("Перевірив: Олійник О. О.")],
   }),
-  emptyLine(),
-  emptyLine(),
-  emptyLine(),
-  emptyLine(),
-  emptyLine(),
-  emptyLine(),
+  emptyLine(), emptyLine(), emptyLine(), emptyLine(), emptyLine(), emptyLine(),
   centeredParagraph(titleRun("Харків — 2026")),
 ];
 
-// ─── BODY SECTIONS ───────────────────────────────────────────────────
+// ─── BODY ───────────────────────────────────────────────────────────
 
 const programOutput = `Лабораторна робота №2 — Структури даних
 Варіант 9
@@ -277,74 +299,48 @@ Queue [head → tail]: 30, 40, 50
 List: 10 → 20 → 30 → 40 → 50 → null`;
 
 const bodyParagraphs = [
+  // Body starts on new page (after title)
   new Paragraph({ children: [new PageBreak()] }),
 
-  // 1 МЕТА РОБОТИ
+  // Sections 1-3 flow together
   sectionHeading("1", "Мета роботи"),
-  bodyParagraph(
-    "Навчитися реалізовувати базові структури даних (стек, чергу, зв'язковий список) та операції з ними.",
-  ),
+  bodyParagraph("Навчитися реалізовувати базові структури даних (стек, чергу, зв'язковий список) та операції з ними."),
 
-  // 2 ЗАВДАННЯ
   sectionHeading("2", "Завдання"),
-  bodyParagraph(
-    "Реалізувати наступні структури даних без використання стандартних класів бібліотек:",
-  ),
-  bodyParagraph(
-    "1) Стек на основі масиву з операціями PUSH та POP. Записати 5 елементів, виштовхнути 2, роздрукувати залишок.",
-  ),
-  bodyParagraph(
-    "2) Чергу на основі масиву з операціями enqueue та dequeue.",
-  ),
-  bodyParagraph(
-    "3) Зв'язковий список. Створити список із п'яти елементів та роздрукувати його.",
-  ),
+  bodyParagraph("Реалізувати наступні структури даних без використання стандартних класів бібліотек:"),
+  bodyParagraph("1) Стек на основі масиву з операціями PUSH та POP. Записати 5 елементів, виштовхнути 2, роздрукувати залишок."),
+  bodyParagraph("2) Чергу на основі масиву з операціями enqueue та dequeue."),
+  bodyParagraph("3) Зв'язковий список. Створити список із п'яти елементів та роздрукувати його."),
 
-  // 3 ХІД РОБОТИ
   sectionHeading("3", "Хід роботи"),
 
-  // 3.1 Стек на основі масиву
   subsectionHeading("3.1", "Стек на основі масиву"),
-  bodyParagraph(
-    "Стек — це структура даних, що працює за принципом LIFO (Last In, First Out). Реалізація виконана на основі масиву фіксованої ємності та індексу top, що вказує на верхній елемент. Операція push збільшує top на одиницю та записує значення, операція pop зчитує значення та зменшує top. При спробі додати елемент до переповненого стеку генерується виняток overflow, при вилученні з порожнього — underflow.",
-  ),
-
+  bodyParagraph("Стек — це структура даних, що працює за принципом LIFO (Last In, First Out). Реалізація виконана на основі масиву фіксованої ємності та індексу top, що вказує на верхній елемент. Операція push збільшує top на одиницю та записує значення, операція pop зчитує значення та зменшує top. При спробі додати елемент до переповненого стеку генерується виняток overflow, при вилученні з порожнього — underflow."),
   listingCaption("3.1", "Реалізація стеку"),
-  ...codeBlock(stackCode),
+  ...codeBlock(stackCode, { listingNumber: "3.1" }),
 
-  // 3.2 Черга на основі масиву
   subsectionHeading("3.2", "Черга на основі масиву"),
-  bodyParagraph(
-    "Черга — це структура даних, що працює за принципом FIFO (First In, First Out). Реалізація виконана як циклічний буфер з використанням індексів head, tail та лічильника size. Операція enqueue додає елемент у позицію tail, операція dequeue вилучає елемент із позиції head. Обидва індекси обертаються за модулем ємності масиву, що забезпечує ефективне використання пам'яті.",
-  ),
-
+  bodyParagraph("Черга — це структура даних, що працює за принципом FIFO (First In, First Out). Реалізація виконана як циклічний буфер з використанням індексів head, tail та лічильника size. Операція enqueue додає елемент у позицію tail, операція dequeue вилучає елемент із позиції head. Обидва індекси обертаються за модулем ємності масиву, що забезпечує ефективне використання пам'яті."),
   listingCaption("3.2", "Реалізація черги"),
-  ...codeBlock(queueCode),
+  ...codeBlock(queueCode, { listingNumber: "3.2" }),
 
-  // 3.3 Зв'язковий список
   subsectionHeading("3.3", "Зв'язковий список"),
-  bodyParagraph(
-    "Однозв'язковий список — це динамічна структура даних, де кожен вузол зберігає значення та посилання на наступний вузол. Операція append проходить список до останнього вузла та додає новий елемент. Операція print обходить список від head до null, збираючи значення для виведення.",
-  ),
-
+  bodyParagraph("Однозв'язковий список — це динамічна структура даних, де кожен вузол зберігає значення та посилання на наступний вузол. Операція append проходить список до останнього вузла та додає новий елемент. Операція print обходить список від head до null, збираючи значення для виведення."),
   listingCaption("3.3", "Реалізація зв'язкового списку"),
-  ...codeBlock(linkedListCode),
+  ...codeBlock(linkedListCode, { listingNumber: "3.3" }),
 
-  // 4 РЕЗУЛЬТАТИ
-  sectionHeading("4", "Результати"),
+  // Section 4 — new page
+  sectionHeading("4", "Результати", { pageBreakBefore: true }),
   bodyParagraph("Результати виконання програми наведено нижче."),
-
   listingCaption("4.1", "Вивід програми"),
-  ...codeBlock(programOutput),
+  ...codeBlock(programOutput, { listingNumber: "4.1" }),
 
-  // 5 ВИСНОВКИ
-  sectionHeading("5", "Висновки"),
-  bodyParagraph(
-    "У ході лабораторної роботи було реалізовано три базові структури даних — стек, чергу та зв'язковий список — без використання стандартних бібліотечних класів. Стек реалізовано на основі масиву з принципом LIFO, чергу — як циклічний буфер з принципом FIFO, список — як однозв'язкову динамічну структуру. Результати демонструють коректну роботу всіх операцій.",
-  ),
+  // Section 5 — new page
+  sectionHeading("5", "Висновки", { pageBreakBefore: true }),
+  bodyParagraph("У ході лабораторної роботи було реалізовано три базові структури даних — стек, чергу та зв'язковий список — без використання стандартних бібліотечних класів. Стек реалізовано на основі масиву з принципом LIFO, чергу — як циклічний буфер з принципом FIFO, список — як однозв'язкову динамічну структуру. Результати демонструють коректну роботу всіх операцій."),
 ];
 
-// ─── ДОДАТОК А — Вихідний код програми ──────────────────────────────
+// ─── ДОДАТОК А ──────────────────────────────────────────────────────
 
 const appendixParagraphs = [
   sectionHeading("", "Додаток А", { pageBreakBefore: true }),
@@ -355,92 +351,55 @@ const appendixParagraphs = [
 const sourceFiles = readSourceFiles();
 let listingCounter = 1;
 for (const file of sourceFiles) {
-  appendixParagraphs.push(
-    listingCaption(`А.${listingCounter}`, file.name),
-  );
-  appendixParagraphs.push(...codeBlock(file.content.trimEnd()));
+  const num = `А.${listingCounter}`;
+  appendixParagraphs.push(listingCaption(num, file.name));
+  appendixParagraphs.push(...codeBlock(file.content.trimEnd(), { listingNumber: num }));
   appendixParagraphs.push(emptyLine());
   listingCounter++;
 }
 
-// ─── DOCUMENT ────────────────────────────────────────────────────────
+// ─── DOCUMENT ───────────────────────────────────────────────────────
 
 const doc = new Document({
   styles: {
     default: {
       document: {
-        run: {
-          font: FONT,
-          size: BODY_SIZE,
-          language: { value: "uk-UA" },
-        },
-        paragraph: {
-          spacing: { after: 0, line: LINE_SPACING_15, lineRule: "auto" },
-        },
+        run: { font: FONT, size: BODY_SIZE, language: { value: "uk-UA" } },
+        paragraph: { spacing: { after: 0, line: LINE_SPACING_15, lineRule: "auto" } },
       },
     },
     paragraphStyles: [
       {
-        id: "Heading1",
-        name: "Heading 1",
-        basedOn: "Normal",
-        next: "Normal",
-        quickFormat: true,
+        id: "Heading1", name: "Heading 1", basedOn: "Normal", next: "Normal", quickFormat: true,
         run: { size: BODY_SIZE, bold: true, font: FONT },
-        paragraph: {
-          spacing: { before: 240, after: 120, line: LINE_SPACING_15, lineRule: "auto" },
-          outlineLevel: 0,
-        },
+        paragraph: { spacing: { before: 240, after: 120, line: LINE_SPACING_15, lineRule: "auto" }, outlineLevel: 0 },
       },
       {
-        id: "Heading2",
-        name: "Heading 2",
-        basedOn: "Normal",
-        next: "Normal",
-        quickFormat: true,
+        id: "Heading2", name: "Heading 2", basedOn: "Normal", next: "Normal", quickFormat: true,
         run: { size: BODY_SIZE, bold: true, font: FONT },
-        paragraph: {
-          spacing: { before: 120, after: 60, line: LINE_SPACING_15, lineRule: "auto" },
-          outlineLevel: 1,
-        },
+        paragraph: { spacing: { before: 120, after: 60, line: LINE_SPACING_15, lineRule: "auto" }, outlineLevel: 1 },
       },
     ],
   },
-  sections: [
-    {
-      properties: {
-        page: {
-          size: { width: 11906, height: 16838 },
-          margin: { ...margins, header: 708, footer: 708 },
-        },
-        titlePage: true,
+  sections: [{
+    properties: {
+      page: {
+        size: { width: 11906, height: 16838 },
+        margin: { ...margins, header: 708, footer: 708 },
       },
-      headers: {
-        default: new Header({
-          children: [
-            new Paragraph({
-              alignment: AlignmentType.RIGHT,
-              children: [
-                new TextRun({
-                  children: [PageNumber.CURRENT],
-                  font: FONT,
-                  size: BODY_SIZE,
-                }),
-              ],
-            }),
-          ],
-        }),
-      },
-      children: [
-        ...titlePageParagraphs,
-        ...bodyParagraphs,
-        ...appendixParagraphs,
-      ],
+      titlePage: true,
     },
-  ],
+    headers: {
+      default: new Header({
+        children: [new Paragraph({
+          alignment: AlignmentType.RIGHT,
+          children: [new TextRun({ children: [PageNumber.CURRENT], font: FONT, size: BODY_SIZE })],
+        })],
+      }),
+    },
+    children: [...titlePageParagraphs, ...bodyParagraphs, ...appendixParagraphs],
+  }],
 });
-
-// ─── Output ──────────────────────────────────────────────────────────
 
 const outputPath = join(__dirname, "Звіт_ЛР2_Коновалов_ПЗПІ-25-6.docx");
 const buffer = await Packer.toBuffer(doc);
